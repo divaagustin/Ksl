@@ -145,8 +145,22 @@ function tempCloudPlugin() {
   };
 }
 
+function spaFallbackPlugin() {
+  return {
+    name: 'spa-fallback',
+    closeBundle() {
+      const distDir = path.resolve(process.cwd(), 'dist');
+      const indexPath = path.join(distDir, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        fs.copyFileSync(indexPath, path.join(distDir, '200.html'));
+        fs.copyFileSync(indexPath, path.join(distDir, '404.html'));
+      }
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tempCloudPlugin()],
+  plugins: [react(), tempCloudPlugin(), spaFallbackPlugin()],
   server: {
     host: '0.0.0.0',
     port: 5173,
