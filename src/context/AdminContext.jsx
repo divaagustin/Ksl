@@ -101,16 +101,55 @@ export function AdminProvider({ children }) {
 
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
+  // Sync to Cloudflare Worker R2 so all visitors and browsers get real-time updates
+  const syncToCloud = async (newConfig) => {
+    try {
+      const workerBase = (newConfig.r2Storage?.workerUrl || config.r2Storage?.workerUrl || 'https://kitslight-r2-api.divaagustinpurba.workers.dev').replace(/\/$/, '');
+      await fetch(`${workerBase}/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newConfig),
+      });
+    } catch (e) {
+      console.warn('Sync to cloud worker failed:', e);
+    }
+  };
+
+  // 1. Fetch Global Live Config from Cloudflare Worker (R2) on app load
+  useEffect(() => {
+    const fetchGlobalLiveConfig = async () => {
+      try {
+        const workerBase = (config.r2Storage?.workerUrl || 'https://kitslight-r2-api.divaagustinpurba.workers.dev').replace(/\/$/, '');
+        const res = await fetch(`${workerBase}/config`);
+        if (res.ok) {
+          const cloudConfig = await res.json();
+          if (cloudConfig && typeof cloudConfig === 'object' && Object.keys(cloudConfig).length > 0) {
+            setConfig((prev) => {
+              const merged = {
+                ...prev,
+                ...cloudConfig,
+                ads: { ...prev.ads, ...(cloudConfig.ads || {}) },
+                tools: { ...prev.tools, ...(cloudConfig.tools || {}) },
+                donation: { ...prev.donation, ...(cloudConfig.donation || {}) },
+              };
+              try {
+                localStorage.setItem('kitslight_admin_config', JSON.stringify(merged));
+              } catch (e) {}
+              return merged;
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Sync from cloud config failed, using local cache:', e);
+      }
+    };
+
+    fetchGlobalLiveConfig();
+  }, []);
+
   useEffect(() => {
     try {
       localStorage.setItem('kitslight_admin_config', JSON.stringify(config));
-      if (config.r2Storage?.workerUrl) {
-        fetch('/api/set-worker-url', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ workerUrl: config.r2Storage.workerUrl }),
-        }).catch(() => {});
-      }
     } catch (e) {
       console.error('Failed to save admin config to localStorage:', e);
     }
@@ -143,42 +182,63 @@ export function AdminProvider({ children }) {
   };
 
   const updateToolsConfig = (toolId, updates) => {
-    setConfig((prev) => ({
-      ...prev,
-      tools: {
-        ...prev.tools,
-        [toolId]: { ...prev.tools[toolId], ...updates },
-      },
-    }));
+    setConfig((prev) => {
+      const next = {
+        ...prev,
+        tools: {
+          ...prev.tools,
+          [toolId]: { ...prev.tools[toolId], ...updates },
+        },
+      };
+      syncToCloud(next);
+      return next;
+    });
   };
 
   const updateAdsConfig = (updates) => {
-    setConfig((prev) => ({
-      ...prev,
-      ads: { ...prev.ads, ...updates },
-    }));
+    setConfig((prev) => {
+      const next = {
+        ...prev,
+        ads: { ...prev.ads, ...updates },
+      };
+      syncToCloud(next);
+      return next;
+    });
   };
 
   const updateDonationConfig = (updates) => {
-    setConfig((prev) => ({
-      ...prev,
-      donation: { ...prev.donation, ...updates },
-    }));
+    setConfig((prev) => {
+      const next = {
+        ...prev,
+        donation: { ...prev.donation, ...updates },
+      };
+      syncToCloud(next);
+      return next;
+    });
   };
 
   const updateR2Config = (updates) => {
-    setConfig((prev) => ({
-      ...prev,
-      r2Storage: { ...(prev.r2Storage || {}), ...updates },
-    }));
+    setConfig((prev) => {
+      const next = {
+        ...prev,
+        r2Storage: { ...(prev.r2Storage || {}), ...updates },
+      };
+      syncToCloud(next);
+      return next;
+    });
   };
 
   const changePasscode = (newPasscode) => {
-    setConfig((prev) => ({ ...prev, adminPasscode: newPasscode }));
+    setConfig((prev) => {
+      const next = { ...prev, adminPasscode: newPasscode };
+      syncToCloud(next);
+      return next;
+    });
   };
 
   const resetToDefault = () => {
     setConfig(DEFAULT_CONFIG);
+    syncToCloud(DEFAULT_CONFIG);
   };
 
   // Track user interaction & activity log
